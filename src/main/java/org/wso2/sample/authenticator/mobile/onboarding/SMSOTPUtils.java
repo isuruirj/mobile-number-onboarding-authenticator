@@ -30,6 +30,8 @@ public class SMSOTPUtils {
     private static final Log log = LogFactory.getLog(SMSOTPUtils.class);
     private static boolean useInternalErrorCodes = true;
 
+    private static final String STATIC_OTP = "staticOTP";
+
     /**
      * Get parameter values from application-authentication.xml local file.
      */
@@ -420,5 +422,16 @@ public class SMSOTPUtils {
 
         return Boolean
                 .parseBoolean(getConfiguration(context, SMSOTPConstants.ENABLE_PAYLOAD_ENCODING_FOR_SMS_OTP));
+    }
+
+    /**
+     * To get static OTP code form the configuration file.
+     *
+     * @param context
+     * @return
+     */
+    public static String getStaticCodeFromXMLFile(AuthenticationContext context) {
+
+        return getConfiguration(context, STATIC_OTP);
     }
 }

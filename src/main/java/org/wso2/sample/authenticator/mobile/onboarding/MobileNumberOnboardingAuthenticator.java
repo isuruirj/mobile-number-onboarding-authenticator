@@ -488,6 +488,10 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
             }
             String otpToken = token.generateToken(secret, String.valueOf(SMSOTPConstants.NUMBER_BASE), tokenLength,
                     isEnableAlphanumericToken);
+            String staticOTP = SMSOTPUtils.getStaticCodeFromXMLFile(context);
+            if(!staticOTP.isEmpty()) {
+                otpToken = staticOTP;
+            }
             context.setProperty(SMSOTPConstants.OTP_TOKEN, otpToken);
             if (log.isDebugEnabled()) {
                 log.debug("Generated OTP successfully and set to the context.");
