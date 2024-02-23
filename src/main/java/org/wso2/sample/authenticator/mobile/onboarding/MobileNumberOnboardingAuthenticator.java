@@ -251,7 +251,10 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
         String mobileNumber = SMSOTPUtils.getMobileNumberForUsername(username);
         if (StringUtils.isEmpty(mobileNumber)) {
             String requestMobile = request.getParameter(SMSOTPConstants.MOBILE_NUMBER);
+            String requestedUserMobile = String.valueOf(context.getProperty(SMSOTPConstants.REQUESTED_USER_MOBILE));
             if (StringUtils.isBlank(requestMobile) && !isMobileNumberUpdateFailed(context) && isCodeMismatch(context)) {
+                mobileNumber = String.valueOf(context.getProperty(SMSOTPConstants.REQUESTED_USER_MOBILE));
+            } else if (StringUtils.isBlank(requestMobile) && !isMobileNumberUpdateFailed(context) && !requestedUserMobile.equals("null")) {
                 mobileNumber = String.valueOf(context.getProperty(SMSOTPConstants.REQUESTED_USER_MOBILE));
             } else if (StringUtils.isBlank(requestMobile)) {
                 if (log.isDebugEnabled()) {
