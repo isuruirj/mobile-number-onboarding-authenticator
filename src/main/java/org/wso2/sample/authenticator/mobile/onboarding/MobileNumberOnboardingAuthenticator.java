@@ -88,6 +88,9 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
     private static final String AUTHENTICATOR_FRIENDLY_NAME = "Mobile Number Onboarding";
     private static final String TRIGGER_SMS_NOTIFICATION = "TRIGGER_SMS_NOTIFICATION";
     private static final String CANCEL_FLOW = "cancelFlow";
+    private static final String UPDATE_MFA = "updateMfa";
+    private static final String IS_UNIQUE_MOBILE = "isUniqueMobile";
+    private static final String ERROR_MESSAGE = "&authFailure=true&authFailureMsg=phonenumber.existing";
 
     /**
      * Check whether the authentication or logout request can be handled by the authenticator
@@ -124,6 +127,20 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
             // if the request comes with MOBILE_NUMBER, it will go through this flow.
             initiateAuthenticationRequest(request, response, context);
             return AuthenticatorFlowStatus.INCOMPLETE;
+        } else if (StringUtils.isNotEmpty(request.getParameter(UPDATE_MFA)) && "true".equalsIgnoreCase(request.getParameter(UPDATE_MFA))) {
+            // If user clicked on update MFA
+            if (log.isDebugEnabled()) {
+                log.debug("User clicked update mfa flow. Hence proceeding mobile number update flow.");
+            }
+            initiateAuthenticationRequest(request, response, context);
+            publishPostSMSOTPGeneratedEvent(request, context);
+            if (context.getProperty(SMSOTPConstants.AUTHENTICATION).equals(AUTHENTICATOR_NAME)) {
+                // if the request comes with authentication is SMSOTP, it will go through this flow.
+                return AuthenticatorFlowStatus.INCOMPLETE;
+            } else {
+                // if the request comes with authentication is basic, complete the flow.
+                return AuthenticatorFlowStatus.SUCCESS_COMPLETED;
+            }
         } else if (StringUtils.isEmpty(request.getParameter(SMSOTPConstants.CODE))) {
             // if the request comes with code, it will go through this flow.
             if (isMobileNumberExistsInProfile(context)) {
@@ -202,7 +219,8 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
                     checkStatusCode(response, context, queryParams, errorPage);
                 } else {
                     mobileNumber = getMobileNumber(request, response, context, username, queryParams);
-                    if (StringUtils.isNotEmpty(mobileNumber)) {
+                    if (StringUtils.isNotEmpty(mobileNumber) && (StringUtils.isEmpty(request.getParameter(UPDATE_MFA))
+                            || "false".equalsIgnoreCase(request.getParameter(UPDATE_MFA)))) {
                         proceedWithOTP(response, context, errorPage, mobileNumber, queryParams, username);
                     }
 
@@ -249,7 +267,8 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
                                    String queryParams) throws AuthenticationFailedException, SMSOTPException {
 
         String mobileNumber = SMSOTPUtils.getMobileNumberForUsername(username);
-        if (StringUtils.isEmpty(mobileNumber)) {
+        if (StringUtils.isEmpty(mobileNumber) || "true".equalsIgnoreCase(request.getParameter(UPDATE_MFA)) ||
+                isMobileNumberUpdateFlow(mobileNumber, request.getParameter(SMSOTPConstants.MOBILE_NUMBER))) {
             String requestMobile = request.getParameter(SMSOTPConstants.MOBILE_NUMBER);
             String requestedUserMobile = String.valueOf(context.getProperty(SMSOTPConstants.REQUESTED_USER_MOBILE));
             if (StringUtils.isBlank(requestMobile) && !isMobileNumberUpdateFailed(context) && isCodeMismatch(context)) {
@@ -601,6 +620,8 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
                     response.sendRedirect(url + SMSOTPConstants.RESEND_CODE
                             + SMSOTPUtils.isEnableResendCode(context) + SMSOTPConstants.ERROR_MESSAGE +
                             SMSOTPConstants.TOKEN_EXPIRED_VALUE);
+                } else if (StringUtils.isNotEmpty((String) context.getProperty(IS_UNIQUE_MOBILE))) {
+                    response.sendRedirect(url + SMSOTPConstants.RESEND_CODE + SMSOTPUtils.isEnableResendCode(context) + ERROR_MESSAGE);
                 } else {
                     response.sendRedirect(url + SMSOTPConstants.RESEND_CODE
                             + SMSOTPUtils.isEnableResendCode(context) + SMSOTPConstants.RETRY_PARAMS);
@@ -764,7 +785,7 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
                         "for user:  " + username + " for tenant: " + context.getTenantDomain(), e);
             }
 
-            if (StringUtils.isBlank(mobileNumber)) {
+            if (StringUtils.isBlank(mobileNumber) || isMobileNumberUpdateFlow(mobileNumber, String.valueOf(context.getProperty(REQUESTED_USER_MOBILE)))) {
                 String tenantDomain = MultitenantUtils.getTenantDomain(username);
                 Object verifiedMobileObject = context.getProperty(SMSOTPConstants.REQUESTED_USER_MOBILE);
                 if (verifiedMobileObject != null) {
@@ -780,6 +801,10 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
                         if (ex instanceof UserStoreClientException) {
                             context.setProperty(SMSOTPConstants.MOBILE_NUMBER_UPDATE_FAILURE, "true");
                             context.setProperty(SMSOTPConstants.PROFILE_UPDATE_FAILURE_REASON, ex.getMessage());
+                        }
+                        if (e.getMessage().equals("The value defined for Mobile is already in use by different user!")) {
+                            log.debug("The value defined for Mobile is already in use by different user!");
+                            context.setProperty(IS_UNIQUE_MOBILE,"false");
                         }
                         throw new AuthenticationFailedException("Mobile claim update failed for user " + username, e);
                     }
@@ -1277,7 +1302,8 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
             screenUserAttributeValue = userRealm.getUserStoreManager()
                     .getUserClaimValue(username, screenUserAttributeParam, null);
 
-            if (StringUtils.isBlank(screenUserAttributeValue)) {
+            if (StringUtils.isBlank(screenUserAttributeValue) || isMobileNumberUpdateFlow(screenUserAttributeValue,
+                    String.valueOf(context.getProperty(REQUESTED_USER_MOBILE)))) {
                 screenUserAttributeValue = String.valueOf(context.getProperty(REQUESTED_USER_MOBILE));
             }
         }
@@ -1714,6 +1740,14 @@ public class MobileNumberOnboardingAuthenticator extends AbstractApplicationAuth
     private boolean isMobileNumberUpdateFailed(AuthenticationContext context) {
 
         return Boolean.parseBoolean(String.valueOf(context.getProperty(SMSOTPConstants.MOBILE_NUMBER_UPDATE_FAILURE)));
+    }
+
+    private boolean isMobileNumberUpdateFlow(String oldMobile, String newMobile) {
+
+        if (StringUtils.isNotEmpty(oldMobile) && StringUtils.isNotEmpty(newMobile)){
+            return true;
+        }
+        return false;
     }
 
     /**
